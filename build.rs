@@ -7,9 +7,8 @@ fn main() {
     println!("cargo:rerun-if-changed=ext/llama.cpp/ggml.c");
     println!("cargo:rerun-if-changed=ext/llama.cpp/llama.cpp");
 
-    // Do we have CUDA supported on this environment? If so, then we want to build with CUDART support
+    // TODO(aduffy): Build with CUDA support
 
-    // Build ggml
     cc::Build::new()
         .includes(vec!["ext/llama.cpp"])
         .file("ext/llama.cpp/ggml.c")
