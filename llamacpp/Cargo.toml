@@ -1,0 +1,10 @@
+[package]
+name = "llamacpp"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+llamacpp-sys = { path = "../llamacpp-sys" }
