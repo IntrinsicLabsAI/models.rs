@@ -1,5 +1,3 @@
-
-
 fn main() {
     // Build the ggml and llama libraries from the subproject
     println!("cargo:rerun-if-changed=ext/llama.cpp/ggml.c");
@@ -37,4 +35,3 @@ fn main() {
         .write_to_file("src/llama_bindings.rs")
         .unwrap();
 }
-

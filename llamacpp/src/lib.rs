@@ -9,7 +9,8 @@ use llamacpp_sys::{
     llama_backend_free, llama_backend_init, llama_context, llama_context_default_params,
     llama_eval, llama_free, llama_free_model, llama_get_logits, llama_load_model_from_file,
     llama_model, llama_n_vocab, llama_new_context_with_model, llama_sample_token, llama_token,
-    llama_token_data, llama_token_data_array, llama_token_get_text, llama_tokenize, llama_token_eos, llama_token_bos, llama_token_nl,
+    llama_token_bos, llama_token_data, llama_token_data_array, llama_token_eos,
+    llama_token_get_text, llama_token_nl, llama_tokenize,
 };
 
 pub struct Backend;
@@ -23,6 +24,12 @@ impl Backend {
 
     pub fn load_model(&self, path: &PathBuf) -> Result<Model> {
         Model::new(path)
+    }
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -75,7 +82,14 @@ impl Model {
             let token_nl = llama_token_nl(ctx);
 
             // How to return a Result type here properly
-            (NonNull::new_unchecked(ctx), NonNull::new_unchecked(model), n_vocab, token_bos, token_eos, token_nl)
+            (
+                NonNull::new_unchecked(ctx),
+                NonNull::new_unchecked(model),
+                n_vocab,
+                token_bos,
+                token_eos,
+                token_nl,
+            )
         };
 
         Ok(Model {
@@ -114,7 +128,8 @@ impl Model {
                 );
 
                 let logits = llama_get_logits(self.ctx.as_mut());
-                let mut candidates: Vec<llama_token_data> = Vec::with_capacity(self.n_vocab as usize);
+                let mut candidates: Vec<llama_token_data> =
+                    Vec::with_capacity(self.n_vocab as usize);
                 for tok_id in 0..self.n_vocab {
                     candidates.push(llama_token_data {
                         id: tok_id,
