@@ -29,6 +29,7 @@ pub use llama_bindings::{
     llama_token_get_text,
     llama_token_eos,
     llama_token_bos,
+    llama_token_nl,
     llama_time_us,
     llama_get_timings,
     llama_reset_timings,

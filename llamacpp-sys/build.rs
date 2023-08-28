@@ -1,4 +1,4 @@
-use cc;
+
 
 fn main() {
     // Build the ggml and llama libraries from the subproject
@@ -14,7 +14,6 @@ fn main() {
         .includes(vec!["ext/llama.cpp"])
         .opt_level(3)
         .define("GGML_USE_ACCELERATE", "1")
-        .flag("-framework").flag("Accelerate")
         .file("ext/llama.cpp/ggml.c")
         .file("ext/llama.cpp/ggml-alloc.c")
         .compile("ggml");
@@ -23,9 +22,7 @@ fn main() {
     cc::Build::new()
         .cpp(true)
         .flag("-std=c++11")
-        .flag("-framework").flag("Accelerate")
         .includes(vec!["ext/llama.cpp"])
-        .cpp_link_stdlib("c++")
         .opt_level(3)
         .file("ext/llama.cpp/llama.cpp")
         .compile("llama");

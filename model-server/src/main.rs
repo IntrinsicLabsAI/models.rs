@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use llamacpp::{Backend, Model};
+use llamacpp::{Backend};
 
 #[tokio::main]
 async fn main() -> Result<()> {

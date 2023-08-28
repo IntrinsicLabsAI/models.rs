@@ -9,7 +9,7 @@ use llamacpp_sys::{
     llama_backend_free, llama_backend_init, llama_context, llama_context_default_params,
     llama_eval, llama_free, llama_free_model, llama_get_logits, llama_load_model_from_file,
     llama_model, llama_n_vocab, llama_new_context_with_model, llama_sample_token, llama_token,
-    llama_token_data, llama_token_data_array, llama_token_get_text, llama_tokenize, llama_token_eos, llama_token_bos, llama_sample_top_k,
+    llama_token_data, llama_token_data_array, llama_token_get_text, llama_tokenize, llama_token_eos, llama_token_bos, llama_token_nl,
 };
 
 pub struct Backend;
@@ -39,6 +39,7 @@ pub struct Model {
     n_vocab: i32,
     token_bos: llama_token,
     token_eos: llama_token,
+    token_nl: llama_token,
 }
 
 impl Drop for Model {
@@ -52,7 +53,7 @@ impl Drop for Model {
 
 impl Model {
     pub fn new(path: &PathBuf) -> Result<Self> {
-        let (ctx, model, n_vocab, token_bos, token_eos) = unsafe {
+        let (ctx, model, n_vocab, token_bos, token_eos, token_nl) = unsafe {
             let params = llama_context_default_params();
             let path_c_str = CString::new(path.to_str().expect("Could not convert PathBuf to str"))
                 .expect("Could not convert to CString");
@@ -71,9 +72,10 @@ impl Model {
             let n_vocab = llama_n_vocab(ctx);
             let token_bos = llama_token_bos(ctx);
             let token_eos = llama_token_eos(ctx);
+            let token_nl = llama_token_nl(ctx);
 
             // How to return a Result type here properly
-            (NonNull::new_unchecked(ctx), NonNull::new_unchecked(model), n_vocab, token_bos, token_eos)
+            (NonNull::new_unchecked(ctx), NonNull::new_unchecked(model), n_vocab, token_bos, token_eos, token_nl)
         };
 
         Ok(Model {
@@ -83,6 +85,7 @@ impl Model {
             n_vocab,
             token_bos,
             token_eos,
+            token_nl,
         })
     }
 
@@ -101,7 +104,6 @@ impl Model {
         };
         assert!(prompt_tokens > 0, "No tokens generated");
 
-        let n_vocab = unsafe { llama_n_vocab(self.ctx.as_mut()) };
         let mut completion = String::from("");
         for i in 0..20 {
             unsafe {
@@ -112,8 +114,8 @@ impl Model {
                 );
 
                 let logits = llama_get_logits(self.ctx.as_mut());
-                let mut candidates: Vec<llama_token_data> = Vec::with_capacity(n_vocab as usize);
-                for tok_id in 0..n_vocab {
+                let mut candidates: Vec<llama_token_data> = Vec::with_capacity(self.n_vocab as usize);
+                for tok_id in 0..self.n_vocab {
                     candidates.push(llama_token_data {
                         id: tok_id,
                         logit: *logits.offset(tok_id as isize),
@@ -143,6 +145,9 @@ impl Model {
         let next_token = unsafe { llama_token_get_text(self.ctx.as_ptr(), token_id) };
         if next_token.is_null() {
             panic!("null next_token recovered");
+        }
+        if token_id == self.token_nl {
+            return "\n".to_owned();
         }
         let token_text = unsafe {
             CStr::from_ptr(next_token)
