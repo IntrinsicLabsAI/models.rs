@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
 
     let app = Router::new()
         .route("/models", get(router::models::endpoints::get_models))
-        .route("/complete", post(router::generate::generate))
+        .route("/complete", post(router::generate::endpoints::generate))
         .layer(
             tower_http::trace::TraceLayer::new_for_http()
                 .make_span_with(
