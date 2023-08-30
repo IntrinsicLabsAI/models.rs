@@ -3,18 +3,22 @@ fn main() {
     println!("cargo:rerun-if-changed=ext/llama.cpp/ggml.c");
     println!("cargo:rerun-if-changed=ext/llama.cpp/llama.cpp");
 
-    // Link with macOS Accelerate BLAS implementation
-    println!("cargo:rustc-link-lib=framework=Accelerate");
-
-    // Build ggml shared library
-    cc::Build::new()
+    let mut ggml_build = cc::Build::new();
+    ggml_build
         .cpp(false)
         .includes(vec!["ext/llama.cpp"])
         .opt_level(3)
-        .define("GGML_USE_ACCELERATE", "1")
         .file("ext/llama.cpp/ggml.c")
-        .file("ext/llama.cpp/ggml-alloc.c")
-        .compile("ggml");
+        .file("ext/llama.cpp/ggml-alloc.c");
+
+    // Link with macOS Accelerate BLAS implementation
+    if cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-lib=framework=Accelerate");
+        ggml_build.define("GGML_USE_ACCELERATE", "1");
+    }
+
+    // Build ggml shared library
+    ggml_build.compile("ggml");
 
     // Build llama.cpp shared library
     cc::Build::new()
