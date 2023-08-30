@@ -34,12 +34,14 @@ impl From<&Model> for types::RegisteredModel {
     }
 }
 
+/// A specific version of a [RegisteredModel]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ModelVersion {
     pub model_id: String,
     pub version: String,
 }
 
+/// Metadata acquired from importing a model from a remote system, e.g. HuggingFace Hub or disk
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ImportMetadata {
     pub model_id: String,
@@ -48,6 +50,7 @@ pub struct ImportMetadata {
     pub imported_at: OffsetDateTime,
 }
 
+/// Handle to the [database connection](rusqlite::Connection)
 pub struct DB;
 
 impl DB {
@@ -56,16 +59,77 @@ impl DB {
     }
 }
 
+/// Root schema for the DB. Should be updated when we add/remove tables
+/// NOTE: This should be merged more cleanly with the migration stuff.
+static ROOT_SCHEMA: &'static str = r"
+        create table if not exists model (
+            id          text not null,
+            name        text unique,
+            model_type  text not null,
+            runtime     text not null,
+            description text not null,
+
+            primary key (id)
+        );
+
+        create table if not exists model_version (
+            model_id    text not null,
+            version     text not null,
+
+            primary key (model_id, version),
+            foreign key (model_id) references model(id)
+        );
+
+        create table if not exists import_metadata (
+            model_id        text not null,
+            model_version   text not null,
+            source text     not null,
+            imported_at     datetime not null,
+
+            primary key (model_id, model_version),
+            foreign key (model_id) references model(id),
+            foreign key (model_version) references model_version(version)
+        );
+
+        create table if not exists model_params (
+            model_id        text not null,
+            model_version   text not null,
+            params          text not null,
+
+            primary key (model_id, model_version),
+            foreign key (model_id) references model(id),
+            foreign key (model_version) references model_version(version)
+        );
+
+        create table if not exists saved_experiments (
+            id              text not null,
+            model_id        text not null,
+            model_version   text not null,
+            temperature     float not null,
+            tokens          integer not null,
+            prompt          text not null,
+            output          text not null,
+            created_at      datetime not null,
+
+            primary key (id),
+            foreign key (model_id) references model(id),
+            foreign key (model_version) references model(version)
+        );
+";
+
 #[cfg(test)]
 mod test {
     use crate::router::models::types::{ModelType, RegisteredModel, Runtime};
 
     use super::DB;
+    use super::ROOT_SCHEMA;
 
     #[test]
     pub fn test_simple() {
         let dir = tempdir::TempDir::new("db_test").unwrap();
         let mut db = DB::open(dir.path().join("test.db")).unwrap();
+        // Execute our root migration to see the table schema accordingly.
+        db.execute_batch(ROOT_SCHEMA).unwrap();
 
         // Have a single open TXN and ensure that we enforce the different contact versions here.
         {

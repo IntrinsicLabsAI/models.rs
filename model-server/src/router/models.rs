@@ -1,4 +1,6 @@
 pub mod types {
+    use std::path::{PathBuf};
+
     use serde::{Deserialize, Serialize};
 
     /// ModelType corresponds to the category of model. Currently accepted values include
@@ -42,9 +44,14 @@ pub mod types {
         pub models: Vec<RegisteredModel>,
     }
 
-    #[derive(Serialize, Deserialize, Clone, Debug)]
-    pub struct HealthStatus {
-        pub status: String,
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag = "type")]
+    pub enum Locator {
+        #[serde(rename = "hf/v1")]
+        HFLocator { repo_id: String, file_path: PathBuf },
+
+        #[serde(rename = "disk/v1")]
+        DiskLocator { path: PathBuf },
     }
 }
 
@@ -88,11 +95,12 @@ pub mod endpoints {
 
         Ok(Json(result))
     }
-
 }
 
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::router::models::types;
 
     #[test]
@@ -122,6 +130,18 @@ mod test {
         assert_eq!(
             serde_json::to_string(&registered_model).unwrap(),
             r#"{"id":"6f479fd1-d7eb-4ca0-b15e-e61743e561fd","name":"my-model","model_type":"completion","runtime":"ggml"}"#
+        );
+    }
+
+    #[test]
+    pub fn import_locator_serde() {
+        let locator = types::Locator::HFLocator {
+            repo_id: "meta-llm/llama".to_owned(),
+            file_path: PathBuf::from("consolidated.00.pth"),
+        };
+        assert_eq!(
+            r#"{"type":"hf/v1","repo_id":"meta-llm/llama","file_path":"consolidated.00.pth"}"#,
+            serde_json::to_string(&locator).unwrap()
         );
     }
 }
