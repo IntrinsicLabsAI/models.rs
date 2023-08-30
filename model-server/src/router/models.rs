@@ -47,10 +47,10 @@ pub mod types {
     #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub enum Locator {
-        #[serde(rename = "hf/v1")]
-        HFLocator { repo_id: String, file_path: PathBuf },
+        #[serde(rename = "locatorv1/hf")]
+        HFLocator { repo: String, file: PathBuf },
 
-        #[serde(rename = "disk/v1")]
+        #[serde(rename = "locatorv1/disk")]
         DiskLocator { path: PathBuf },
     }
 }
@@ -136,17 +136,17 @@ mod test {
     #[test]
     pub fn import_locator_serde() {
         let locator = types::Locator::HFLocator {
-            repo_id: "meta-llm/llama".to_owned(),
-            file_path: PathBuf::from("consolidated.00.pth"),
+            repo: "meta-llm/llama".to_owned(),
+            file: PathBuf::from("consolidated.00.pth"),
         };
         assert_eq!(
-            r#"{"type":"hf/v1","repo_id":"meta-llm/llama","file_path":"consolidated.00.pth"}"#,
+            r#"{"type":"locatorv1/hf","repo":"meta-llm/llama","file":"consolidated.00.pth"}"#,
             serde_json::to_string(&locator).unwrap()
         );
 
         assert_eq!(
             serde_json::from_str::<types::Locator>(
-                r#"{"type":"hf/v1","repo_id":"meta-llm/llama","file_path":"consolidated.00.pth"}"#,
+                r#"{"type":"locatorv1/hf","repo":"meta-llm/llama","file":"consolidated.00.pth"}"#,
             )
             .unwrap(),
             locator
