@@ -49,6 +49,9 @@ pub struct Model {
     token_nl: llama_token,
 }
 
+unsafe impl Send for Model {}
+unsafe impl Sync for Model {}
+
 impl Drop for Model {
     fn drop(&mut self) {
         unsafe {
