@@ -1,12 +1,5 @@
-use axum::{extract::State, http::StatusCode, Json};
-use std::borrow::BorrowMut;
-
-use crate::state::AppState;
-
 pub mod types {
-    use once_cell::sync::Lazy;
-    use regex::Regex;
-    use serde::{de, Deserialize, Serialize, Serializer};
+    use serde::{Deserialize, Serialize};
 
     /// ModelType corresponds to the category of model. Currently accepted values include
     /// Completion: a completion language model.
@@ -55,13 +48,47 @@ pub mod types {
     }
 }
 
-// How to convert any error we receive to a standard status code?
+pub mod endpoints {
+    use super::types::{self, GetRegisteredModelsResponse};
+    use crate::{db::tables, state::AppState};
+    use axum::{extract::State, http::StatusCode, Json};
 
-/// Handler for v1 get_models endpoint
-async fn get_models(
-    State(app_state): State<AppState>,
-) -> Result<Json<types::GetRegisteredModelsResponse>, StatusCode> {
-    todo!()
+    pub async fn get_models(
+        State(app_state): State<AppState>,
+    ) -> Result<Json<types::GetRegisteredModelsResponse>, StatusCode> {
+        let mut conn = app_state.db.conn.lock().await;
+        let tx = conn.transaction().unwrap();
+        let stored_models: Vec<tables::Model> = {
+            let mut stmt = tx
+                .prepare("select id, name, model_type, runtime, description from model order by id")
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+            let models = stmt
+                .query([])
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .mapped(|row| {
+                    Ok(tables::Model {
+                        id: row.get_ref(0)?.as_str()?.to_owned(),
+                        name: row.get_ref_unwrap(1).as_str()?.to_owned(),
+                        model_type: row.get_ref_unwrap(2).as_str()?.to_owned(),
+                        runtime: row.get_ref_unwrap(3).as_str()?.to_owned(),
+                        description: row.get_ref_unwrap(4).as_str()?.to_owned(),
+                    })
+                })
+                .filter(|res| res.is_ok())
+                .map(|res| res.unwrap());
+
+            models.collect()
+        };
+
+        let api_models: Vec<types::RegisteredModel> =
+            stored_models.iter().map(|m| m.into()).collect();
+
+        let result = GetRegisteredModelsResponse { models: api_models };
+
+        Ok(Json(result))
+    }
+
 }
 
 #[cfg(test)]

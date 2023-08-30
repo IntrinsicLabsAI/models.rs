@@ -4,7 +4,7 @@ use log::info;
 use std::{fmt, sync::Arc};
 
 use anyhow::Context;
-use rusqlite::Transaction;
+use rusqlite::{OptionalExtension, Transaction};
 
 use super::migration::Migration;
 
@@ -43,11 +43,11 @@ impl<'a> MigrationManager<'a> for LinearMigrationManager {
     fn initialize(&self, conn: &'a Transaction) -> anyhow::Result<()> {
         conn.execute_batch(
             r"
-            create table if not exist schema_versions (
+            create table if not exists schema_versions (
                 version INTEGER NOT NULL,
                 is_current INTEGER NOT NULL,
                 PRIMARY KEY (version)
-            )
+            );
         ",
         )?;
 
@@ -55,20 +55,26 @@ impl<'a> MigrationManager<'a> for LinearMigrationManager {
     }
 
     fn get_current_schema_version(&self, conn: &'a Transaction) -> anyhow::Result<u64> {
-        let version = conn.query_row(
-            "select version from schema_versions where is_current = 1",
-            [],
-            |row| {
-                row.get_ref(0).map(|version| {
-                    version
-                        .as_i64()
-                        .context("could not cast value to u64")
-                        .unwrap()
-                })
-            },
-        )?;
-
-        Ok(version as u64)
+        // If the result is a no-rows error then we can ignore it.
+        match conn
+            .query_row(
+                "select version from schema_versions where is_current = 1",
+                [],
+                |row| {
+                    row.get_ref(0).map(|version| {
+                        version
+                            .as_i64()
+                            .context("could not cast value to u64")
+                            .unwrap()
+                    })
+                },
+            )
+            .optional()
+        {
+            Ok(None) => anyhow::Ok(0u64),
+            Ok(Some(v)) => anyhow::Ok(v as u64),
+            Err(err) => Err(anyhow::Error::msg(format!("Query failed: {}", err))),
+        }
     }
 
     fn get_target_schema_version(&self) -> u64 {
@@ -113,11 +119,5 @@ impl fmt::Display for MigrationError {
 impl std::error::Error for MigrationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
-    }
-}
-
-impl Drop for LinearMigrationManager {
-    fn drop(&mut self) {
-        self.migrations.clear();
     }
 }

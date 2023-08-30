@@ -1,19 +1,37 @@
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::{ops::Deref, path::Path};
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::router::models::types::Runtime;
+use crate::router::models::types;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Model {
     pub id: String,
     pub name: String,
-    pub model_type: Runtime,
+    pub model_type: String,
     pub runtime: String,
     pub description: String,
+}
+
+impl From<&Model> for types::RegisteredModel {
+    // Deserialize the shit from our string representation
+    fn from(value: &Model) -> Self {
+        Self {
+            id: uuid::Uuid::parse_str(&value.id).unwrap(),
+            name: value.name.clone(),
+            model_type: match value.model_type.deref() {
+                "completion" => types::ModelType::Completion,
+                _ => panic!("Invalid model_type {}", value.model_type),
+            },
+            runtime: match value.runtime.deref() {
+                "ggml" => types::Runtime::Ggml,
+                _ => panic!("Invalid runtime {}", value.runtime),
+            },
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -34,74 +52,7 @@ pub struct DB;
 
 impl DB {
     pub fn open<T: AsRef<Path>>(db_path: T) -> Result<Connection> {
-        let conn = Connection::open(db_path)
-            .context("failed to open connection")
-            .unwrap();
-
-        // Setup the connection
-        conn.execute_batch(
-            r"
-            begin;
-            create table if not exists model (
-                id          text not null,
-                name        text unique,
-                model_type  text not null,
-                runtime     text not null,
-                description text not null,
-
-                primary key (id)
-            );
-
-            create table if not exists model_version (
-                model_id    text not null,
-                version     text not null,
-
-                primary key (model_id, version),
-                foreign key (model_id) references model(id)
-            );
-
-            create table if not exists import_metadata (
-                model_id        text not null,
-                model_version   text not null,
-                source text     not null,
-                imported_at     datetime not null,
-
-                primary key (model_id, model_version),
-                foreign key (model_id) references model(id),
-                foreign key (model_version) references model_version(version)
-            );
-
-            create table if not exists model_params (
-                model_id        text not null,
-                model_version   text not null,
-                params          text not null,
-
-                primary key (model_id, model_version),
-                foreign key (model_id) references model(id),
-                foreign key (model_version) references model_version(version)
-            );
-
-            create table if not exists saved_experiments (
-                id              text not null,
-                model_id        text not null,
-                model_version   text not null,
-                temperature     float not null,
-                tokens          integer not null,
-                prompt          text not null,
-                output          text not null,
-                created_at      datetime not null,
-
-                primary key (id),
-                foreign key (model_id) references model(id),
-                foreign key (model_version) references model(version)
-            );
-
-            commit;
-        ",
-        )
-        .unwrap();
-
-        Ok(conn)
+        Connection::open(db_path).context("failed to open connection")
     }
 }
 

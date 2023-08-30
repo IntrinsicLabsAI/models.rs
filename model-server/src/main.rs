@@ -5,14 +5,16 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use axum::{routing::post, Router};
-use env_logger::Env;
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use llamacpp::Backend;
 
 use model_server::{
     db::{manager::LinearMigrationManager, manager::MigrationManager, migration::V0, tables::DB},
-    router::generate,
-    state::{model::LockedModel, AppState},
+    router,
+    state::{AppState, ManagedConnection, ManagedModel},
 };
 use serde::Deserialize;
 
@@ -40,7 +42,9 @@ fn default_db_path() -> String {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init_from_env(Env::default().default_filter_or("info"));
+    // env_logger::init_from_env(Env::default().default_filter_or("info"));
+    // Setup tracing across all threads
+    tracing_subscriber::fmt::init();
 
     log::info!("Loading .env");
     let env: EnvVars = envy::from_env()?;
@@ -68,12 +72,22 @@ async fn main() -> Result<()> {
     }
 
     let state = AppState {
-        model: LockedModel::new(model),
-        conn: Arc::new(db),
+        model: Arc::new(ManagedModel::new(model)),
+        db: Arc::new(ManagedConnection::new(db)),
     };
 
     let app = Router::new()
-        .route("/complete", post(generate))
+        .route("/models", get(router::models::endpoints::get_models))
+        .route("/complete", post(router::generate::generate))
+        .layer(
+            tower_http::trace::TraceLayer::new_for_http()
+                .make_span_with(
+                    tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
+                )
+                .on_response(
+                    tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO),
+                ),
+        )
         .with_state(state);
 
     let listen_addr: SocketAddr = format!("{}:{}", &env.host, &env.port)

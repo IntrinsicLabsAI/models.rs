@@ -14,7 +14,6 @@ impl Migration for V0 {
     fn forward(&self, conn: &Connection) -> anyhow::Result<()> {
         conn.execute_batch(
             r"
-        begin;
         create table if not exists model (
             id          text not null,
             name        text unique,
@@ -68,8 +67,6 @@ impl Migration for V0 {
             foreign key (model_id) references model(id),
             foreign key (model_version) references model(version)
         );
-
-        commit;
     ",
         )
         .context("failed to execute migration v0 -- create initial tables")?;
