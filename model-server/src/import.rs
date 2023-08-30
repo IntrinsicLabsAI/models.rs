@@ -1,5 +1,4 @@
-pub mod core {
-}
+pub mod core {}
 
 pub mod hf {
     // HuggingFace-specific import codes
