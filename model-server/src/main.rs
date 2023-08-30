@@ -1,6 +1,6 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -10,9 +10,7 @@ use env_logger::Env;
 use llamacpp::Backend;
 
 use model_server::{
-    db::{
-        self, manager::LinearMigrationManager, manager::MigrationManager, migration::V0, tables::DB,
-    },
+    db::{manager::LinearMigrationManager, manager::MigrationManager, migration::V0, tables::DB},
     router::generate,
     state::{model::LockedModel, AppState},
 };

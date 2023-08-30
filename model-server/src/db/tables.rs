@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::router::models::Runtime;
+use crate::router::models::types::Runtime;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Model {
@@ -107,7 +107,7 @@ impl DB {
 
 #[cfg(test)]
 mod test {
-    use crate::router::models::{ModelType, RegisteredModel, Runtime};
+    use crate::router::models::types::{ModelType, RegisteredModel, Runtime};
 
     use super::DB;
 

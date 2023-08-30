@@ -1,7 +1,7 @@
 //! Package for MigrationManager, which depends on a set of `Migration`s
 
 use log::info;
-use std::{sync::Arc, fmt};
+use std::{fmt, sync::Arc};
 
 use anyhow::Context;
 use rusqlite::Transaction;
@@ -78,7 +78,7 @@ impl<'a> MigrationManager<'a> for LinearMigrationManager {
     fn upgrade_schema(&self, conn: &'a Transaction, from: u64, to: u64) -> anyhow::Result<()> {
         info!("Executing upgrade from {} to {}", from, to);
         // Enforce version ranges are valid
-        if from <= 0 || from >= (self.migrations.len() as u64) {
+        if from >= (self.migrations.len() as u64) {
             return anyhow::Result::Err(MigrationError::InvalidSchemaVersion.into());
         }
 
@@ -90,7 +90,7 @@ impl<'a> MigrationManager<'a> for LinearMigrationManager {
             // Get those schema versions
             let migration = self.migrations.get(i as usize).unwrap();
             info!("starting migration {}", &i);
-            migration.forward(&conn)?;
+            migration.forward(conn)?;
             info!("migration {} complete", &i);
         }
 
@@ -115,7 +115,6 @@ impl std::error::Error for MigrationError {
         None
     }
 }
-
 
 impl Drop for LinearMigrationManager {
     fn drop(&mut self) {

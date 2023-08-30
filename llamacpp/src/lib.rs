@@ -1,7 +1,7 @@
 use anyhow::{Error, Result};
 use std::{
     ffi::{CStr, CString},
-    path::PathBuf,
+    path::{Path, PathBuf},
     ptr::NonNull,
 };
 
@@ -62,7 +62,7 @@ impl Drop for Model {
 }
 
 impl Model {
-    pub fn new(path: &PathBuf) -> Result<Self> {
+    pub fn new(path: &Path) -> Result<Self> {
         let (ctx, model, n_vocab, token_bos, token_eos, token_nl) = unsafe {
             let params = llama_context_default_params();
             let path_c_str = CString::new(path.to_str().expect("Could not convert PathBuf to str"))
@@ -96,7 +96,7 @@ impl Model {
         };
 
         Ok(Model {
-            source: path.clone(),
+            source: path.to_path_buf(),
             ctx,
             model,
             n_vocab,

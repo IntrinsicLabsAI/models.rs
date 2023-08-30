@@ -80,12 +80,12 @@ impl Migration for V0 {
 
 #[cfg(test)]
 mod test {
-    use super::{V0, Migration};
+    use super::{Migration, V0};
 
     #[test]
     fn test_migration() {
         let db = rusqlite::Connection::open_in_memory().unwrap();
-        
+
         // Test migrations
         V0.forward(&db).unwrap();
     }
