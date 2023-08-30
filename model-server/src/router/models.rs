@@ -1,5 +1,5 @@
 pub mod types {
-    use std::path::{PathBuf};
+    use std::path::PathBuf;
 
     use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,7 @@ pub mod types {
         pub models: Vec<RegisteredModel>,
     }
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub enum Locator {
         #[serde(rename = "hf/v1")]
@@ -142,6 +142,14 @@ mod test {
         assert_eq!(
             r#"{"type":"hf/v1","repo_id":"meta-llm/llama","file_path":"consolidated.00.pth"}"#,
             serde_json::to_string(&locator).unwrap()
+        );
+
+        assert_eq!(
+            serde_json::from_str::<types::Locator>(
+                r#"{"type":"hf/v1","repo_id":"meta-llm/llama","file_path":"consolidated.00.pth"}"#,
+            )
+            .unwrap(),
+            locator
         );
     }
 }

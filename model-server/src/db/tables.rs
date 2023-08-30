@@ -61,7 +61,7 @@ impl DB {
 
 /// Root schema for the DB. Should be updated when we add/remove tables
 /// NOTE: This should be merged more cleanly with the migration stuff.
-static ROOT_SCHEMA: &'static str = r"
+pub static ROOT_SCHEMA: &'static str = r"
         create table if not exists model (
             id          text not null,
             name        text unique,
