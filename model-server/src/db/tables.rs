@@ -215,6 +215,86 @@ impl DB {
 
         Ok(())
     }
+
+    pub async fn delete_model(&self, model_name: &str) -> anyhow::Result<()> {
+        let mut conn = self.connection.lock().await;
+        {
+            let tx = conn.transaction()?;
+            let model_id: String = tx
+                .prepare("select id from model where name = :name")?
+                .query_row(
+                    named_params! {":name": &model_name},
+                    |r| -> Result<String, rusqlite::Error> { Ok(r.get(0)?) },
+                )?;
+
+            let delete_experiment =
+                tx.prepare("delete from saved_experiments where model_id = :model_id")?;
+            let delete_params =
+                tx.prepare("delete from model_params where model_id = :model_id")?;
+            let delete_import =
+                tx.prepare("delete from import_metadata where model_id = :model_id")?;
+            let delete_version =
+                tx.prepare("delete from model_version where model_id = :model_id")?;
+            let delete_model = tx.prepare("delete from model where id = :model_id")?;
+
+            for mut stmt in vec![
+                delete_experiment,
+                delete_params,
+                delete_import,
+                delete_version,
+                delete_model,
+            ] {
+                stmt.execute(named_params! {":model_id": &model_id})?;
+            }
+
+            tx.commit()?;
+        }
+
+        anyhow::Ok(())
+    }
+
+    pub async fn delete_model_version(
+        &self,
+        model_name: &str,
+        version: &semver::Version,
+    ) -> anyhow::Result<()> {
+        let mut conn = self.connection.lock().await;
+        {
+            let tx = conn.transaction()?;
+            let model_id: String = tx
+                .prepare("select id from model where name = :name")?
+                .query_row(
+                    named_params! {":name": &model_name},
+                    |r| -> Result<String, rusqlite::Error> { Ok(r.get(0)?) },
+                )?;
+
+            let delete_experiment =
+                tx.prepare("delete from saved_experiments where model_id = :model_id and model_version = :version")?;
+            let delete_params = tx.prepare(
+                "delete from model_params where model_id = :model_id and model_version = :version",
+            )?;
+            let delete_import = tx.prepare(
+                "delete from import_metadata where model_id = :model_id and model_version = :version",
+            )?;
+            let delete_version = tx.prepare(
+                "delete from model_version where model_id = :model_id and version = :version",
+            )?;
+
+            for mut stmt in vec![
+                delete_experiment,
+                delete_params,
+                delete_import,
+                delete_version,
+            ] {
+                stmt.execute(
+                    named_params! {":model_id": &model_id, ":version": &version.to_string()},
+                )?;
+            }
+
+            tx.commit()?;
+        }
+        anyhow::Ok(())
+    }
 }
 
 /// Root schema for the DB. Should be updated when we add/remove tables
@@ -293,58 +373,5 @@ mod test {
 
         // Run the actual test
         assert!(db.get_models().await.unwrap().is_empty());
-        // // Execute our root migration to see the table schema accordingly.
-        // db.execute_batch(ROOT_SCHEMA).unwrap();
-
-        // // Have a single open TXN and ensure that we enforce the different contact versions here.
-        // {
-        //     {
-        //         let tx = db.transaction().unwrap();
-        //         let mut stmt = tx
-        //             .prepare("insert into model values (?, ?, ?, ?, ?)")
-        //             .unwrap();
-        //         stmt.insert([
-        //             "0937a774-0d14-46ad-923d-86ca6ce4a569",
-        //             "model1",
-        //             "completion",
-        //             "ggml",
-        //             "my first model",
-        //         ])
-        //         .unwrap();
-        //         stmt.insert([
-        //             "beaa4b5a-ae17-4bc2-8af8-28168072cf5a",
-        //             "model2",
-        //             "completion",
-        //             "ggml",
-        //             "my second model",
-        //         ])
-        //         .unwrap();
-
-        //         tx.commit().unwrap();
-        //     }
-
-        //     // Start a new transaction, and validate that we can read the data
-
-        //     let tx = db.transaction().unwrap();
-
-        //     {
-        //         let mut stmt = tx
-        //             .prepare("select id, name, model_type, runtime, description from model")
-        //             .unwrap();
-
-        //         let result = stmt
-        //             .query_map([], |row| {
-        //                 let uid: &str = row.get_ref(0).unwrap().as_str().unwrap();
-        //                 Ok(RegisteredModel {
-        //                     id: uuid::Uuid::parse_str(uid).unwrap().to_owned(),
-        //                     name: row.get::<usize, String>(1).unwrap().to_owned(),
-        //                     model_type: ModelType::Completion,
-        //                     runtime: Runtime::Ggml,
-        //                 })
-        //             })
-        //             .unwrap();
-        //         assert_eq!(result.count(), 2);
-        //     }
-        // }
     }
 }

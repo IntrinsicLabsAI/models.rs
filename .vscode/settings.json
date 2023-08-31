@@ -87,5 +87,9 @@
         "algorithm": "cpp"
     },
     "editor.formatOnSave": true,
-    "editor.parameterHints.enabled": false
+    "editor.parameterHints.enabled": false,
+    "rust-analyzer.inlayHints.parameterHints.enable": false,
+    "rust-analyzer.inlayHints.typeHints.enable": false,
+    "rust-analyzer.inlayHints.renderColons": false,
+    "rust-analyzer.inlayHints.chainingHints.enable": true
 }

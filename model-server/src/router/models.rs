@@ -77,6 +77,34 @@ pub async fn rename_model(
     StatusCode::NO_CONTENT
 }
 
+pub async fn delete_model_version(
+    State(AppState {
+        db,
+        model: _,
+        importer: _,
+    }): State<AppState>,
+    Path((model_name, version)): Path<(String, semver::Version)>,
+) -> StatusCode {
+    db.delete_model_version(&model_name, &version)
+        .await
+        .unwrap();
+
+    StatusCode::NO_CONTENT
+}
+
+pub async fn delete_model(
+    State(AppState {
+        db,
+        model: _,
+        importer: _,
+    }): State<AppState>,
+    Path(model_name): Path<String>,
+) -> StatusCode {
+    db.delete_model(&model_name).await.unwrap();
+
+    StatusCode::NO_CONTENT
+}
+
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;

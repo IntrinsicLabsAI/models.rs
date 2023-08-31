@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use tower_http::cors::{Any, CorsLayer};
@@ -32,6 +32,11 @@ pub fn app_router() -> Router<AppState> {
             put(models::update_model_description),
         )
         .route("/v1/models/:model_name/name", post(models::rename_model))
+        .route("/v1/models/:model_name", delete(models::delete_model))
+        .route(
+            "/v1/models/:model_name/versions/:version",
+            delete(models::delete_model_version),
+        )
         //
         // ML model execution
         //
