@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Ok};
 use axum::async_trait;
@@ -8,9 +8,12 @@ use tokio::sync::{
     RwLock,
 };
 
+use crate::router::models::types::{DiskLocator, HFLocator};
+
 use self::types::{ImportJob, ImportJobId, ImportJobStatus};
 
 pub mod types {
+
     use serde::{Deserialize, Serialize};
 
     use crate::router::models::types::{DiskLocator, HFLocator};
@@ -29,41 +32,45 @@ pub mod types {
     /// Import jobs can be in one of three different states at a given point in time
     /// - **[Queued]** - for imports that are taking too long
     /// - **[InProgress]** - for imports that are actively being worked on
-    #[derive(Debug)]
+    /// - **[Completed]** - for imports that are complete and cached locally on disk
+    /// - **[Failed]** - for import jobs that failed with an error
+    #[derive(Debug, Clone, Serialize)]
+    #[serde(tag = "type")]
     pub enum ImportJobStatus {
+        #[serde(rename = "queued")]
         Queued,
+
+        #[serde(rename = "in-progress")]
         InProgress {
             /// A numberic progress indicator between 0 (0%) and 1.0 (100%)
             progress: f32,
         },
-        Completed {
-            info: Option<String>,
-        },
+
+        #[serde(rename = "completed")]
+        Completed { info: Option<String> },
+
+        #[serde(rename = "finished")]
         Failed {
-            error: Box<anyhow::Error>,
+            // We need to keep track of an error, so that it's sendable, and so that we can log it for later.
+            error: Option<String>,
         },
     }
 }
-
-// The importer will update the status and notify any listeners about the new status.
 
 /// Importer is the trait for types that can conduct external imports.
 /// They receive an [ImportTask] which describes the source of the import along with
 /// any associated metadata necessary to execute the import.
 #[async_trait]
 pub trait Importer {
-    async fn start_import(&mut self, task: ImportJob) -> anyhow::Result<ImportJobId>;
+    async fn start_import(&self, task: ImportJob) -> anyhow::Result<ImportJobId>;
     async fn get_import_status(&self, task_id: &ImportJobId) -> anyhow::Result<ImportJobStatus>;
+    async fn get_all_job_status(&self) -> anyhow::Result<HashMap<ImportJobId, ImportJobStatus>>;
 }
 
+#[derive(Debug)]
 struct JobEntry {
     task: ImportJob,
     status: ImportJobStatus,
-}
-
-pub struct DefaultImporter {
-    job_table: RwLock<HashMap<ImportJobId, JobEntry>>,
-    sender: Sender<Message>,
 }
 
 /// Message used by our async task queue which interposes between the main task and the worker tasks doing
@@ -75,20 +82,33 @@ enum Message {
     },
 }
 
-impl DefaultImporter {
+/// The default in-memory importer implementation. Uses a multi-producer single-consumer
+/// task structure to asynchronously download models and update the state tracker.
+pub struct InMemoryImporter {
+    /// Synchronized table of job statuses. This typestring is gross AF
+    job_status: Arc<RwLock<HashMap<ImportJobId, JobEntry>>>,
+
+    /// mpsc message channel for communication between the workers and the state-tracker.
+    sender: Sender<Message>,
+
+    /// Root location of where models are extracted to disk.
+    root_dir: PathBuf,
+}
+
+impl InMemoryImporter {
     pub fn new() -> Self {
         // TODO(aduffy): should this be bounded? Or what should the bound be if not?
         let (sender, mut receiver) = mpsc::channel::<Message>(128);
-        let job_table: RwLock<HashMap<ImportJobId, JobEntry>> = RwLock::new(HashMap::new());
+        let job_status = Arc::new(RwLock::new(HashMap::<ImportJobId, JobEntry>::new()));
 
-        // This background task is responsible for executing.
+        let table_clone = Arc::clone(&job_status);
         tokio::spawn(async move {
             info!("Spawning background task for DefaultImporter");
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     Message::UpdateStatus { job, status } => {
-                        // Perform update locally
-                        let mut table = job_table.write().await;
+                        info!("Updating task={} status={:?}", job, &status);
+                        let mut table = table_clone.write().await;
                         if let Some(entry) = table.get_mut(&job) {
                             entry.status = status;
                         }
@@ -99,8 +119,9 @@ impl DefaultImporter {
         });
 
         Self {
-            job_table: RwLock::new(HashMap::new()),
+            job_status,
             sender,
+            root_dir: PathBuf::from("value"),
         }
     }
 }
@@ -111,6 +132,12 @@ async fn do_import(
     sender: mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
     info!("Job status updating: {:?}", &task);
+
+    // Get the progress updaters here...
+    match &task {
+        ImportJob::DISK { locator } => import_disk(locator).await,
+        ImportJob::HF { locator } => import_hf(locator).await,
+    };
 
     sender
         .send(Message::UpdateStatus {
@@ -123,9 +150,13 @@ async fn do_import(
     Ok(())
 }
 
+async fn import_hf(_locator: &HFLocator) {}
+
+async fn import_disk(_locator: &DiskLocator) {}
+
 #[async_trait]
-impl Importer for DefaultImporter {
-    async fn start_import(&mut self, task: ImportJob) -> anyhow::Result<ImportJobId> {
+impl Importer for InMemoryImporter {
+    async fn start_import(&self, task: ImportJob) -> anyhow::Result<ImportJobId> {
         let result = match &task {
             ImportJob::HF { locator: _ } => {
                 return Err(anyhow::Error::msg("hf imports not supported yet!"));
@@ -135,7 +166,7 @@ impl Importer for DefaultImporter {
                 let task_id = uuid::Uuid::new_v4();
 
                 {
-                    let mut jq = self.job_table.write().await;
+                    let mut jq = self.job_status.write().await;
                     jq.insert(
                         task_id,
                         JobEntry {
@@ -156,7 +187,23 @@ impl Importer for DefaultImporter {
         result
     }
 
-    async fn get_import_status(&self, _task_id: &ImportJobId) -> anyhow::Result<ImportJobStatus> {
-        todo!()
+    async fn get_import_status(&self, task_id: &ImportJobId) -> anyhow::Result<ImportJobStatus> {
+        // Print out the status of the first job
+        let jq = self.job_status.read().await;
+        if let Some(value) = jq.get(task_id) {
+            return Ok(value.status.clone());
+        }
+
+        Err(anyhow::Error::msg("oopsie, no data"))
+    }
+
+    async fn get_all_job_status(&self) -> anyhow::Result<HashMap<ImportJobId, ImportJobStatus>> {
+        let _ = self.job_status.read().await;
+        let mut hm = HashMap::new();
+        for (k, v) in self.job_status.read().await.iter() {
+            hm.insert(k.clone(), v.status.clone());
+        }
+
+        Ok(hm)
     }
 }

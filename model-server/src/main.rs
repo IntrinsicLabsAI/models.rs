@@ -5,15 +5,13 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use axum::{
-    routing::{get, post},
-    Router,
-};
+
 use llamacpp::Backend;
 
 use model_server::{
     db::{manager::LinearMigrationManager, manager::MigrationManager, migration::V0, tables::DB},
-    router,
+    import::InMemoryImporter,
+    router::{app_router},
     state::{AppState, ManagedConnection, ManagedModel},
 };
 use serde::Deserialize;
@@ -71,14 +69,16 @@ async fn main() -> Result<()> {
         migration_manager.upgrade_schema(&txn, current_schema_version, target_schema_version)?;
     }
 
+    // Create an Importer
+    let importer = InMemoryImporter::new();
+
     let state = AppState {
         model: Arc::new(ManagedModel::new(model)),
         db: Arc::new(ManagedConnection::new(db)),
+        importer: Arc::new(importer),
     };
 
-    let app = Router::new()
-        .route("/models", get(router::models::endpoints::get_models))
-        .route("/complete", post(router::generate::endpoints::generate))
+    let app = app_router()
         .layer(
             tower_http::trace::TraceLayer::new_for_http()
                 .make_span_with(

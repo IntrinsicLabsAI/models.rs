@@ -2,6 +2,8 @@ use rusqlite::Connection;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::import::Importer;
+
 pub struct ManagedModel {
     pub model: Mutex<llamacpp::Model>,
 }
@@ -31,11 +33,13 @@ impl ManagedConnection {
 
 type ModelHandle = Arc<ManagedModel>;
 type ConnectionHandle = Arc<ManagedConnection>;
+type ImporterHandle = Arc<dyn Importer + Sync + Send>;
 
 #[derive(Clone)]
 pub struct AppState {
     pub model: ModelHandle,
     pub db: ConnectionHandle,
+    pub importer: ImporterHandle,
 }
 
 unsafe impl Send for AppState {}
