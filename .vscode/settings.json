@@ -86,5 +86,6 @@
         "ranges": "cpp",
         "algorithm": "cpp"
     },
-    "editor.formatOnSave": true
+    "editor.formatOnSave": true,
+    "editor.parameterHints.enabled": false
 }

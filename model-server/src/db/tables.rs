@@ -1,7 +1,8 @@
+use anyhow::Context;
 use std::path::Path;
 use tokio::sync::Mutex;
 
-use rusqlite::Connection;
+use rusqlite::{named_params, Connection};
 use time::OffsetDateTime;
 
 use crate::api_types::{self, ModelType, RegisterModelRequest, RegisteredModel, Runtime};
@@ -20,6 +21,9 @@ impl DB {
         // TODO(aduffy): use a threadlocal Connection pool to avoid the unnecessary locks and unlocks,
         // though they probably won't make much of a difference.
         let conn = Connection::open(db_path)?;
+
+        // Enforce FK constraints on connection
+        conn.execute("PRAGMA foreign_keys = ON", [])?;
 
         Ok(Self {
             connection: Mutex::new(conn),
@@ -50,17 +54,47 @@ impl DB {
         {
             let mut conn = self.connection.lock().await;
             let tx = conn.transaction().unwrap();
+
+            // insert on model
             tx.prepare(
                 "insert into model values (:id, :name, :model_type, :runtime, :description)",
             )?
-            .insert(&[
-                (":id", &model_row.id),
-                (":name", &model_row.name),
-                (":model_type", &model_row.model_type),
-                (":runtime", &model_row.runtime),
-                (":description", &model_row.description),
-            ])?;
-            tx.commit()?;
+            .insert(named_params! {
+                ":id": &model_row.id,
+                ":name": &model_row.name,
+                ":model_type": &model_row.model_type,
+                ":runtime": &model_row.runtime,
+                ":description": &model_row.description,
+            })
+            .context("insert model table")?;
+
+            // insert on model_version
+            tx.prepare("insert into model_version values (:id, :version)")?
+                .insert(named_params! { ":id": &model_row.id, ":version": &request.version.to_string() })
+                .context("insert model_version table")?;
+
+            // insert on import_metadata
+            tx.prepare(
+                "insert into import_metadata values (:id, :version, :source_json, :imported_at)",
+            )?
+            .insert(named_params! {
+                ":id": &model_row.id,
+                ":version": &request.version.to_string(),
+                ":source_json": &serde_json::to_string(&request.import_metadata.source)?,
+                ":imported_at": &request.import_metadata.imported_at,
+            })
+            .context("insert import_metadata table")?;
+
+            // insert on model_params
+            tx.prepare("insert into model_params values (:id, :version, :params)")?
+                .insert(named_params! {
+                    ":id": &model_row.id,
+                    ":version": &request.version.to_string(),
+                    ":params": &serde_json::to_string(&request.internal_params)?,
+                })
+                .context("insert model_params table")?;
+
+            tx.commit().context("txn commit")?;
         }
 
         Ok(model_id)

@@ -40,7 +40,7 @@ impl Migration for V0 {
 
             primary key (model_id, model_version),
             foreign key (model_id) references model(id),
-            foreign key (model_version) references model_version(version)
+            foreign key (model_id, model_version) references model_version(model_id, version)
         );
 
         create table if not exists model_params (
@@ -50,7 +50,7 @@ impl Migration for V0 {
 
             primary key (model_id, model_version),
             foreign key (model_id) references model(id),
-            foreign key (model_version) references model_version(version)
+            foreign key (model_id, model_version) references model_version(model_id, version)
         );
 
         create table if not exists saved_experiments (
@@ -65,7 +65,7 @@ impl Migration for V0 {
 
             primary key (id),
             foreign key (model_id) references model(id),
-            foreign key (model_version) references model(version)
+            foreign key (model_id, model_version) references model_version(model_id, version)
         );
     ",
         )

@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use log::info;
 
 use crate::{
     api_types::{GetAllJobStatusResponse, ImportJob, ImportJobId, ImportJobStatus, Locator},
@@ -15,7 +16,7 @@ pub async fn import_model(
     State(app_state): State<AppState>,
     Json(locator): Json<Locator>,
 ) -> Result<Json<ImportJobId>, StatusCode> {
-    // Construct a task based on the locator
+    info!("i am here 1");
     let import_job = match locator {
         Locator::DISK(disk_locator) => ImportJob::DISK {
             locator: disk_locator,
@@ -24,15 +25,18 @@ pub async fn import_model(
             locator: hf_locator,
         },
     };
+    info!("i am here 2");
 
     let result = {
         let importer = app_state.importer;
         importer.start_import(import_job).await
     };
+    info!("i am here 3");
 
-    let job_id = result
-        .context("failed to start import")
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let job_id = result.unwrap();
+    // .context("failed to start import")
+    // .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    info!("i am here 4");
 
     Ok(Json(job_id))
 }

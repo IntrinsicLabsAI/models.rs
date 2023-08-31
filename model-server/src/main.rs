@@ -16,6 +16,8 @@ use model_server::{
 };
 use serde::Deserialize;
 
+
+
 #[derive(Deserialize, Debug)]
 struct EnvVars {
     #[serde(default = "default_listen_addr")]
@@ -68,6 +70,8 @@ async fn main() -> Result<()> {
         let current_schema_version = migration_manager.get_current_schema_version(&txn)?;
         let target_schema_version = migration_manager.get_target_schema_version();
         migration_manager.upgrade_schema(&txn, current_schema_version, target_schema_version)?;
+
+        txn.commit()?;
     }
 
     let db = Arc::new(db);
@@ -88,7 +92,9 @@ async fn main() -> Result<()> {
                     tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
                 )
                 .on_response(
-                    tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO),
+                    tower_http::trace::DefaultOnResponse::new()
+                        .level(tracing::Level::INFO)
+                        .latency_unit(tower_http::LatencyUnit::Micros),
                 ),
         )
         .with_state(state);

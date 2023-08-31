@@ -7,6 +7,7 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::state::AppState;
 
 pub mod generate;
+pub mod hfhub;
 pub mod imports;
 pub mod models;
 
@@ -30,7 +31,9 @@ pub fn app_router() -> Router<AppState> {
         .route("/v1/complete", post(generate::generate))
         .route("/v1/imports", post(imports::import_model))
         .route("/v1/imports", get(imports::import_job_status_all))
-        .route("/imports/:job_id", get(imports::import_job_status))
+        .route("/v1/imports/:job_id", get(imports::import_job_status))
+        // HF Browser
+        .route("/hf/ls/:community/:repo_name", get(hfhub::ls_repo_files))
         // CORS Allow All
-        .layer(CorsLayer::new().allow_origin(Any))
+        .layer(CorsLayer::new().allow_origin(Any).allow_headers(Any))
 }

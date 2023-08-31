@@ -164,3 +164,23 @@ pub enum ImportJobStatus {
         error: Option<String>,
     },
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ListHFFiles {
+    pub repo: String,
+    pub subfolder: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct HFFile {
+    pub filename: String,
+    pub subfolder: Option<String>,
+    pub size_bytes: usize,
+    pub committed_at: OffsetDateTime,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ListHFFilesResponse {
+    pub repo: String,
+    pub files: Vec<HFFile>,
+}

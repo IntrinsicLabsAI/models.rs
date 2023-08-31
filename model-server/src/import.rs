@@ -88,6 +88,7 @@ impl InMemoryImporter {
                                 );
 
                                 db.register_model(&RegisterModelRequest {
+                                    version,
                                     import_metadata: ImportMetadata {
                                         imported_at: OffsetDateTime::now_utc(),
                                         source: match job_def {
@@ -99,7 +100,6 @@ impl InMemoryImporter {
                                             }
                                         },
                                     },
-                                    version: version,
                                     model: file_name,
                                     model_type: ModelType::Completion,
                                     runtime: Runtime::Ggml,
@@ -126,34 +126,24 @@ impl InMemoryImporter {
 #[async_trait]
 impl Importer for InMemoryImporter {
     async fn start_import(&self, task: ImportJob) -> anyhow::Result<ImportJobId> {
-        let result = match &task {
-            ImportJob::HF { locator: _ } => {
-                return Err(anyhow::Error::msg("hf imports not supported yet!"));
-            }
+        let task_id = uuid::Uuid::new_v4();
 
-            ImportJob::DISK { locator: _ } => {
-                let task_id = uuid::Uuid::new_v4();
+        {
+            let mut jq = self.job_status.write().await;
+            jq.insert(
+                task_id,
+                JobEntry {
+                    task: task.clone(),
+                    status: ImportJobStatus::Queued,
+                },
+            );
+        }
 
-                {
-                    let mut jq = self.job_status.write().await;
-                    jq.insert(
-                        task_id,
-                        JobEntry {
-                            task: task.clone(),
-                            status: ImportJobStatus::Queued,
-                        },
-                    );
-                }
+        // Submit an async task to execute against the data, updating the jobs table as relevant.
+        let sender = self.sender.clone();
+        tokio::spawn(do_import(task_id, task.clone(), sender));
 
-                // Submit an async task to execute against the data, updating the jobs table as relevant.
-                let sender = self.sender.clone();
-                tokio::spawn(do_import(task_id, task.clone(), sender));
-
-                Ok(task_id)
-            }
-        };
-
-        result
+        Ok(task_id)
     }
 
     async fn get_import_status(&self, task_id: &ImportJobId) -> anyhow::Result<ImportJobStatus> {
