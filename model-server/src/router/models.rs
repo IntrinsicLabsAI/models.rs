@@ -8,11 +8,14 @@ use axum::{
 };
 
 pub async fn get_models(
-    State(app_state): State<AppState>,
+    State(AppState {
+        db,
+        model: _,
+        importer: _,
+    }): State<AppState>,
 ) -> Result<Json<GetRegisteredModelsResponse>, StatusCode> {
     // TODO(aduffy): use central error type in the BE that can map back to StatusCode easily
-    let result = app_state
-        .db
+    let result = db
         .get_models()
         .await
         .with_context(|| "failed to execute get_models")
@@ -22,21 +25,25 @@ pub async fn get_models(
 }
 
 pub async fn get_model_description(
-    State(app_state): State<AppState>,
+    State(AppState {
+        db,
+        model: _,
+        importer: _,
+    }): State<AppState>,
     Path(model_name): Path<String>,
 ) -> Result<Json<String>, StatusCode> {
     // TODO(aduffy): actually make this return the right error type
-    let desc = app_state
-        .db
-        .get_model_description(&model_name)
-        .await
-        .unwrap();
+    let desc = db.get_model_description(&model_name).await.unwrap();
 
     Ok(Json(desc))
 }
 
 pub async fn update_model_description(
-    State(app_state): State<AppState>,
+    State(AppState {
+        db,
+        model: _,
+        importer: _,
+    }): State<AppState>,
     Path(model_name): Path<String>,
     RawBody(mut updated_desc): RawBody,
 ) -> StatusCode {
@@ -44,10 +51,27 @@ pub async fn update_model_description(
     let desc = String::from_utf8(data.to_vec()).unwrap();
 
     // NOTE: this will fail at runtime which is bad
-    app_state
-        .db
-        .update_model_description(&model_name, &desc)
+    db.update_model_description(&model_name, &desc)
         .await
+        .unwrap();
+
+    StatusCode::NO_CONTENT
+}
+
+pub async fn rename_model(
+    State(AppState {
+        db,
+        model: _,
+        importer: _,
+    }): State<AppState>,
+    Path(model_name): Path<String>,
+    RawBody(mut new_name): RawBody,
+) -> StatusCode {
+    let data = new_name.data().await.unwrap().unwrap();
+    let new_name = String::from_utf8(data.to_vec()).unwrap();
+    db.rename_model(&model_name, &new_name)
+        .await
+        .context("DB::rename_model failed")
         .unwrap();
 
     StatusCode::NO_CONTENT

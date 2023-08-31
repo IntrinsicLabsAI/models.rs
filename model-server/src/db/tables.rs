@@ -193,9 +193,24 @@ impl DB {
         let mut conn = self.connection.lock().await;
         {
             let tx = conn.transaction()?;
-            let mut stmt =
-                tx.prepare("update model set description = :newdesc where name = :name")?;
-            stmt.execute(&[(":newdesc", &new_desc), (":name", &model_name)])?;
+            tx.prepare("update model set description = :newdesc where name = :name")?
+                .execute(&[(":newdesc", &new_desc), (":name", &model_name)])?;
+
+            tx.commit()?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn rename_model(&self, model_name: &str, new_model_name: &str) -> anyhow::Result<()> {
+        let mut conn = self.connection.lock().await;
+        {
+            let tx = conn.transaction()?;
+            tx.prepare("update model set name = :new_model_name where name = :model_name")?
+                .execute(
+                    named_params! {":new_model_name": new_model_name, ":model_name": model_name},
+                )?;
+            tx.commit()?;
         }
 
         Ok(())

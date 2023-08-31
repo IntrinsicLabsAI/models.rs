@@ -1,9 +1,10 @@
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use std::{
     ffi::{CStr, CString},
     path::{Path, PathBuf},
     ptr::NonNull,
 };
+use tokio::sync::mpsc::Sender;
 
 use llamacpp_sys::{
     llama_backend_free, llama_backend_init, llama_context, llama_context_default_params,
@@ -159,6 +160,66 @@ impl Model {
         completion
     }
 
+    pub async fn generate_stream(&mut self, prompt: &str, channel: Sender<StreamMessage>) {
+        let mut tokens = [0i32; 4096];
+        let prompt_c_str = CString::new(prompt).expect("unable to cast &str to CString");
+        let prompt_tokens = unsafe {
+            llama_tokenize(
+                self.ctx.as_mut(),
+                prompt_c_str.as_ptr(),
+                tokens.as_mut_ptr(),
+                4096,
+                false,
+            )
+        };
+        assert!(prompt_tokens > 0, "No tokens generated");
+        for i in 0..20 {
+            unsafe {
+                assert_eq!(
+                    0,
+                    llama_eval(self.ctx.as_mut(), tokens.as_ptr(), prompt_tokens + i, i, 4),
+                    "llama_eval returned non-zero"
+                );
+
+                let logits = llama_get_logits(self.ctx.as_mut());
+                let mut candidates: Vec<llama_token_data> =
+                    Vec::with_capacity(self.n_vocab as usize);
+                for tok_id in 0..self.n_vocab {
+                    candidates.push(llama_token_data {
+                        id: tok_id,
+                        logit: *logits.offset(tok_id as isize),
+                        // NOTE(aduffy): We'd set this if we used top-p sampling
+                        p: 0.0f32,
+                    })
+                }
+                let mut candidates_array = llama_token_data_array {
+                    data: candidates.as_mut_ptr(),
+                    size: candidates.len(),
+                    sorted: false,
+                };
+
+                let next_token = llama_sample_token(self.ctx.as_mut(), &mut candidates_array);
+                if next_token == self.token_eos || next_token == self.token_bos {
+                    break;
+                }
+                tokens[(prompt_tokens + i) as usize] = next_token;
+                channel
+                    .send(StreamMessage::NextToken(self.token_text(next_token)))
+                    .await
+                    .context("failed to send generated token to receiver")
+                    .unwrap();
+            }
+        }
+
+        channel
+            .send(StreamMessage::Done)
+            .await
+            .context("failed to send Done token to receiver")
+            .unwrap();
+    }
+
+    // Accept a channel as an argument, and then stream the tokens back over the channel
+
     fn token_text(&self, token_id: llama_token) -> String {
         let next_token = unsafe { llama_token_get_text(self.ctx.as_ptr(), token_id) };
         if next_token.is_null() {
@@ -177,4 +238,9 @@ impl Model {
         let string = String::from_utf8(vec![0xe2, 0x96, 0x81]).unwrap();
         token_text.replace(&string, " ")
     }
+}
+
+pub enum StreamMessage {
+    Done,
+    NextToken(String),
 }

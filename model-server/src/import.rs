@@ -13,7 +13,7 @@ use semver::Version;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use time::OffsetDateTime;
 use tokio::sync::{
-    mpsc::{self, Sender},
+    mpsc::{channel, Sender},
     RwLock,
 };
 
@@ -40,7 +40,7 @@ pub struct InMemoryImporter {
 impl InMemoryImporter {
     pub fn new(db: Arc<DB>) -> Self {
         // TODO(aduffy): should this be bounded? Or what should the bound be if not?
-        let (sender, mut receiver) = mpsc::channel::<Message>(128);
+        let (sender, mut receiver) = channel::<Message>(128);
         let job_status = Arc::new(RwLock::new(HashMap::<ImportJobId, JobEntry>::new()));
 
         let table_clone = Arc::clone(&job_status);
@@ -185,7 +185,7 @@ enum Message {
 async fn do_import(
     task_id: ImportJobId,
     task: ImportJob,
-    sender: mpsc::Sender<Message>,
+    sender: Sender<Message>,
 ) -> anyhow::Result<()> {
     info!("Job status updating: {:?}", &task);
 

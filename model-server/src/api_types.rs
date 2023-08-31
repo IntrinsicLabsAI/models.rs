@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use time::OffsetDateTime;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct GenerateRequest {
     pub model_id: String,
     pub prompt: String,
