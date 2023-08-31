@@ -11,7 +11,7 @@ use llamacpp::Backend;
 use model_server::{
     db::{manager::LinearMigrationManager, manager::MigrationManager, migration::V0, tables::DB},
     import::InMemoryImporter,
-    router::{app_router},
+    router::app_router,
     state::{AppState, ManagedConnection, ManagedModel},
 };
 use serde::Deserialize;

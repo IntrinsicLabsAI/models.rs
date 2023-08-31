@@ -15,5 +15,8 @@ pub fn app_router() -> Router<AppState> {
         .route("/complete", post(generate::endpoints::generate))
         .route("/imports", post(imports::endpoints::import_model))
         .route("/imports", get(imports::endpoints::import_job_status_all))
-        .route("/imports/:job_id", get(imports::endpoints::import_job_status))
+        .route(
+            "/imports/:job_id",
+            get(imports::endpoints::import_job_status),
+        )
 }
