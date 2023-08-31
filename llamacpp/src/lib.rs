@@ -165,13 +165,13 @@ impl Model {
             panic!("null next_token recovered");
         }
         if token_id == self.token_nl {
-            return "\n".to_owned();
+            return "\n".to_string();
         }
         let token_text = unsafe {
             CStr::from_ptr(next_token)
                 .to_str()
                 .expect("Failed to convert to &str")
-                .to_owned()
+                .to_string()
         };
 
         let string = String::from_utf8(vec![0xe2, 0x96, 0x81]).unwrap();

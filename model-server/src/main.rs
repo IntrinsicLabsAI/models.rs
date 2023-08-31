@@ -12,7 +12,7 @@ use model_server::{
     db::{manager::LinearMigrationManager, manager::MigrationManager, migration::V0, tables::DB},
     import::InMemoryImporter,
     router::app_router,
-    state::{AppState, ManagedConnection, ManagedModel},
+    state::{AppState, ManagedModel},
 };
 use serde::Deserialize;
 
@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
     let model = backend.load_model(&PathBuf::from("/Users/aduffy/Documents/llama2_gguf.bin"))?;
 
     // Generate a managed connection for the SQLite DB.
-    let mut db = DB::open(env.db_path).context("failed to load DB")?;
+    let db = DB::open(env.db_path).context("failed to load DB")?;
 
     // Register migrations
     let mut migration_manager = LinearMigrationManager::new();
@@ -61,7 +61,8 @@ async fn main() -> Result<()> {
 
     // Execute migrations
     {
-        let txn = db.transaction()?;
+        let mut conn = db.connection.lock().await;
+        let txn = conn.transaction()?;
         migration_manager.initialize(&txn)?;
 
         let current_schema_version = migration_manager.get_current_schema_version(&txn)?;
@@ -69,13 +70,15 @@ async fn main() -> Result<()> {
         migration_manager.upgrade_schema(&txn, current_schema_version, target_schema_version)?;
     }
 
+    let db = Arc::new(db);
+
     // Create an Importer
-    let importer = InMemoryImporter::new();
+    let importer = InMemoryImporter::new(Arc::clone(&db));
 
     let state = AppState {
         model: Arc::new(ManagedModel::new(model)),
-        db: Arc::new(ManagedConnection::new(db)),
         importer: Arc::new(importer),
+        db,
     };
 
     let app = app_router()

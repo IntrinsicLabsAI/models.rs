@@ -1,7 +1,8 @@
 use axum::{
     routing::{get, post, put},
-    Router,
+    Json, Router,
 };
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::state::AppState;
 
@@ -9,22 +10,27 @@ pub mod generate;
 pub mod imports;
 pub mod models;
 
+async fn healthz() -> Json<String> {
+    Json("healthy".to_string())
+}
+
+/// Main router for the application, with all API and health endpoints attached
 pub fn app_router() -> Router<AppState> {
     Router::new()
-        .route("/models", get(models::endpoints::get_models))
+        .route("/healthz", get(healthz))
+        .route("/v1/models", get(models::get_models))
         .route(
-            "/models/:model_name/description",
-            get(models::endpoints::get_model_description),
+            "/v1/models/:model_name/description",
+            get(models::get_model_description),
         )
         .route(
-            "/models/:model_name/description",
-            put(models::endpoints::update_model_description),
+            "/v1/models/:model_name/description",
+            put(models::update_model_description),
         )
-        .route("/complete", post(generate::endpoints::generate))
-        .route("/imports", post(imports::endpoints::import_model))
-        .route("/imports", get(imports::endpoints::import_job_status_all))
-        .route(
-            "/imports/:job_id",
-            get(imports::endpoints::import_job_status),
-        )
+        .route("/v1/complete", post(generate::generate))
+        .route("/v1/imports", post(imports::import_model))
+        .route("/v1/imports", get(imports::import_job_status_all))
+        .route("/imports/:job_id", get(imports::import_job_status))
+        // CORS Allow All
+        .layer(CorsLayer::new().allow_origin(Any))
 }

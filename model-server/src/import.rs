@@ -1,61 +1,21 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-
+use crate::{
+    api_types::{
+        CompletionModelParams, DiskLocator, HFLocator, ImportJob, ImportJobId, ImportJobStatus,
+        ImportMetadata, ImportSource, ModelParams, ModelType, RegisterModelRequest, Runtime,
+    },
+    db::tables::DB,
+};
 use anyhow::{Context, Ok};
 use axum::async_trait;
+use hf_hub::{api::tokio::Api, Repo};
 use log::info;
+use semver::Version;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use time::OffsetDateTime;
 use tokio::sync::{
     mpsc::{self, Sender},
     RwLock,
 };
-
-use crate::router::models::types::{DiskLocator, HFLocator};
-
-use self::types::{ImportJob, ImportJobId, ImportJobStatus};
-
-pub mod types {
-
-    use serde::{Deserialize, Serialize};
-
-    use crate::router::models::types::{DiskLocator, HFLocator};
-
-    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-    pub enum ImportJob {
-        // Depending on the task, we want to include the subtypes of the locator here as well instead...fuck
-        HF { locator: HFLocator },
-        DISK { locator: DiskLocator },
-    }
-
-    // Have it enqueue a task, and return an ID
-    pub type ImportJobId = uuid::Uuid;
-
-    /// Status of an import job.
-    /// Import jobs can be in one of three different states at a given point in time
-    /// - **[Queued]** - for imports that are taking too long
-    /// - **[InProgress]** - for imports that are actively being worked on
-    /// - **[Completed]** - for imports that are complete and cached locally on disk
-    /// - **[Failed]** - for import jobs that failed with an error
-    #[derive(Debug, Clone, Serialize)]
-    #[serde(tag = "type")]
-    pub enum ImportJobStatus {
-        #[serde(rename = "queued")]
-        Queued,
-
-        #[serde(rename = "in-progress")]
-        InProgress {
-            /// A numberic progress indicator between 0 (0%) and 1.0 (100%)
-            progress: f32,
-        },
-
-        #[serde(rename = "completed")]
-        Completed { info: Option<String> },
-
-        #[serde(rename = "finished")]
-        Failed {
-            // We need to keep track of an error, so that it's sendable, and so that we can log it for later.
-            error: Option<String>,
-        },
-    }
-}
 
 /// Importer is the trait for types that can conduct external imports.
 /// They receive an [ImportTask] which describes the source of the import along with
@@ -67,21 +27,6 @@ pub trait Importer {
     async fn get_all_job_status(&self) -> anyhow::Result<HashMap<ImportJobId, ImportJobStatus>>;
 }
 
-#[derive(Debug)]
-struct JobEntry {
-    task: ImportJob,
-    status: ImportJobStatus,
-}
-
-/// Message used by our async task queue which interposes between the main task and the worker tasks doing
-/// the downloading.
-enum Message {
-    UpdateStatus {
-        job: ImportJobId,
-        status: ImportJobStatus,
-    },
-}
-
 /// The default in-memory importer implementation. Uses a multi-producer single-consumer
 /// task structure to asynchronously download models and update the state tracker.
 pub struct InMemoryImporter {
@@ -90,69 +35,93 @@ pub struct InMemoryImporter {
 
     /// mpsc message channel for communication between the workers and the state-tracker.
     sender: Sender<Message>,
-
-    /// Root location of where models are extracted to disk.
-    root_dir: PathBuf,
 }
 
 impl InMemoryImporter {
-    pub fn new() -> Self {
+    pub fn new(db: Arc<DB>) -> Self {
         // TODO(aduffy): should this be bounded? Or what should the bound be if not?
         let (sender, mut receiver) = mpsc::channel::<Message>(128);
         let job_status = Arc::new(RwLock::new(HashMap::<ImportJobId, JobEntry>::new()));
 
         let table_clone = Arc::clone(&job_status);
         tokio::spawn(async move {
-            info!("Spawning background task for DefaultImporter");
+            info!("spawning background task for DefaultImporter");
+
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     Message::UpdateStatus { job, status } => {
-                        info!("Updating task={} status={:?}", job, &status);
-                        let mut table = table_clone.write().await;
-                        if let Some(entry) = table.get_mut(&job) {
-                            entry.status = status;
+                        info!("updating task={} status={:?}", job, &status);
+
+                        let job_def = {
+                            // Hold the lock for a very small amount of time
+                            let mut table = table_clone.write().await;
+                            let entry = table.get_mut(&job).unwrap();
+                            entry.status = status.clone();
+
+                            entry.task.clone()
+                        };
+
+                        let file_name = match job_def {
+                            ImportJob::DISK { ref locator } => locator
+                                .path
+                                .file_name()
+                                .unwrap()
+                                .to_owned()
+                                .into_string()
+                                .unwrap(),
+                            ImportJob::HF { ref locator } => locator
+                                .file
+                                .file_name()
+                                .unwrap()
+                                .to_owned()
+                                .into_string()
+                                .unwrap(),
+                        };
+
+                        // If update is completed, we need to insert the new model into the DB
+                        match status {
+                            ImportJobStatus::Completed { info } => {
+                                let version = Version::new(0, 1, 0);
+                                info!(
+                                    "registering model with db name={} version={}",
+                                    &file_name, &version
+                                );
+
+                                db.register_model(&RegisterModelRequest {
+                                    import_metadata: ImportMetadata {
+                                        imported_at: OffsetDateTime::now_utc(),
+                                        source: match job_def {
+                                            ImportJob::HF { ref locator } => {
+                                                ImportSource::HF(locator.clone())
+                                            }
+                                            ImportJob::DISK { ref locator } => {
+                                                ImportSource::DISK(locator.clone())
+                                            }
+                                        },
+                                    },
+                                    version: version,
+                                    model: file_name,
+                                    model_type: ModelType::Completion,
+                                    runtime: Runtime::Ggml,
+                                    internal_params: ModelParams::COMPLETION(
+                                        CompletionModelParams {
+                                            model_path: PathBuf::from(info.unwrap()),
+                                        },
+                                    ),
+                                })
+                                .await
+                                .unwrap();
+                            }
+                            _ => (),
                         }
                     }
                 }
             }
-            info!("Completing");
         });
 
-        Self {
-            job_status,
-            sender,
-            root_dir: PathBuf::from("value"),
-        }
+        Self { job_status, sender }
     }
 }
-
-async fn do_import(
-    task_id: ImportJobId,
-    task: ImportJob,
-    sender: mpsc::Sender<Message>,
-) -> anyhow::Result<()> {
-    info!("Job status updating: {:?}", &task);
-
-    // Get the progress updaters here...
-    match &task {
-        ImportJob::DISK { locator } => import_disk(locator).await,
-        ImportJob::HF { locator } => import_hf(locator).await,
-    };
-
-    sender
-        .send(Message::UpdateStatus {
-            job: task_id.clone(),
-            status: ImportJobStatus::InProgress { progress: 0.0 },
-        })
-        .await
-        .context("failed to send status update")?;
-
-    Ok(())
-}
-
-async fn import_hf(_locator: &HFLocator) {}
-
-async fn import_disk(_locator: &DiskLocator) {}
 
 #[async_trait]
 impl Importer for InMemoryImporter {
@@ -206,4 +175,70 @@ impl Importer for InMemoryImporter {
 
         Ok(hm)
     }
+}
+
+#[derive(Debug)]
+struct JobEntry {
+    task: ImportJob,
+    status: ImportJobStatus,
+}
+
+/// Message used by our async task queue which interposes between the main task and the worker tasks doing
+/// the downloading.
+enum Message {
+    UpdateStatus {
+        job: ImportJobId,
+        status: ImportJobStatus,
+    },
+}
+
+async fn do_import(
+    task_id: ImportJobId,
+    task: ImportJob,
+    sender: mpsc::Sender<Message>,
+) -> anyhow::Result<()> {
+    info!("Job status updating: {:?}", &task);
+
+    sender
+        .send(Message::UpdateStatus {
+            job: task_id.clone(),
+            status: ImportJobStatus::InProgress { progress: 0.0 },
+        })
+        .await
+        .context("failed to send in-progress update")?;
+
+    let download_path = match &task {
+        ImportJob::DISK { locator } => import_disk(locator).await,
+        ImportJob::HF { locator } => import_hf(locator).await,
+    };
+
+    sender
+        .send(Message::UpdateStatus {
+            job: task_id.clone(),
+            status: ImportJobStatus::Completed {
+                info: download_path.to_str().map(|p| p.to_string()),
+            },
+        })
+        .await
+        .context("failed to send completion update")
+}
+
+async fn import_hf(locator: &HFLocator) -> PathBuf {
+    let client = Api::new().unwrap();
+    info!("Executing download from HF");
+    // Send a stream of results back
+    let download = client
+        .repo(Repo::model(locator.repo.clone()))
+        .get(locator.file.to_str().unwrap())
+        .await
+        .unwrap();
+
+    info!("Download completed target={:?}", &download);
+    download
+}
+
+async fn import_disk(locator: &DiskLocator) -> PathBuf {
+    info!("Doing nothing here");
+
+    locator.path.clone()
 }
