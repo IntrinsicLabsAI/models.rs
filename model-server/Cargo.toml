@@ -10,6 +10,7 @@ anyhow = "1.0.75"
 axum = { version = "0.6.20", features = ["tracing", "macros"] }
 env_logger = "0.10.0"
 envy = "0.4.2"
+hf-hub = { version = "0.3.0", features = ["tokio"] }
 llamacpp = { path = "../llamacpp" }
 log = "0.4.20"
 once_cell = "1.18.0"

@@ -44,14 +44,25 @@ pub mod types {
         pub models: Vec<RegisteredModel>,
     }
 
-    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+    pub struct HFLocator {
+        pub repo: String,
+        pub file: PathBuf,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+    pub struct DiskLocator {
+        pub path: PathBuf,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
     #[serde(tag = "type")]
     pub enum Locator {
         #[serde(rename = "locatorv1/hf")]
-        HFLocator { repo: String, file: PathBuf },
+        HF(HFLocator),
 
         #[serde(rename = "locatorv1/disk")]
-        DiskLocator { path: PathBuf },
+        DISK(DiskLocator),
     }
 }
 
@@ -101,7 +112,7 @@ pub mod endpoints {
 mod test {
     use std::path::PathBuf;
 
-    use crate::router::models::types;
+    use crate::router::models::types::{self, HFLocator};
 
     #[test]
     pub fn api_serde() {
@@ -135,10 +146,10 @@ mod test {
 
     #[test]
     pub fn import_locator_serde() {
-        let locator = types::Locator::HFLocator {
+        let locator = types::Locator::HF(HFLocator {
             repo: "meta-llm/llama".to_owned(),
             file: PathBuf::from("consolidated.00.pth"),
-        };
+        });
         assert_eq!(
             r#"{"type":"locatorv1/hf","repo":"meta-llm/llama","file":"consolidated.00.pth"}"#,
             serde_json::to_string(&locator).unwrap()
