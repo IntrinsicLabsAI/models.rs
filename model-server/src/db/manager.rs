@@ -73,7 +73,7 @@ impl<'a> MigrationManager<'a> for LinearMigrationManager {
         {
             Ok(None) => anyhow::Ok(0u64),
             Ok(Some(v)) => anyhow::Ok(v as u64),
-            Err(err) => Err(anyhow::Error::msg(format!("Query failed: {}", err))),
+            Err(err) => Err(anyhow::anyhow!("Query failed: {}", err)),
         }
     }
 

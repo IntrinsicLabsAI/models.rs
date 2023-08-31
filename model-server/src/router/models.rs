@@ -1,4 +1,5 @@
 use crate::{api_types::GetRegisteredModelsResponse, state::AppState};
+use anyhow::Context;
 use axum::{
     body::HttpBody,
     extract::{Path, RawBody, State},
@@ -10,7 +11,12 @@ pub async fn get_models(
     State(app_state): State<AppState>,
 ) -> Result<Json<GetRegisteredModelsResponse>, StatusCode> {
     // TODO(aduffy): use central error type in the BE that can map back to StatusCode easily
-    let result = app_state.db.get_models().await.unwrap();
+    let result = app_state
+        .db
+        .get_models()
+        .await
+        .with_context(|| "failed to execute get_models")
+        .unwrap();
 
     Ok(Json(GetRegisteredModelsResponse { models: result }))
 }

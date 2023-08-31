@@ -92,12 +92,12 @@ impl InMemoryImporter {
                                     import_metadata: ImportMetadata {
                                         imported_at: OffsetDateTime::now_utc(),
                                         source: match job_def {
-                                            ImportJob::HF { ref locator } => {
-                                                ImportSource::HF(locator.clone())
-                                            }
-                                            ImportJob::DISK { ref locator } => {
-                                                ImportSource::DISK(locator.clone())
-                                            }
+                                            ImportJob::HF { ref locator } => ImportSource::HF {
+                                                source: locator.clone(),
+                                            },
+                                            ImportJob::DISK { ref locator } => ImportSource::DISK {
+                                                source: locator.clone(),
+                                            },
                                         },
                                     },
                                     model: file_name,
@@ -153,7 +153,7 @@ impl Importer for InMemoryImporter {
             return Ok(value.status.clone());
         }
 
-        Err(anyhow::Error::msg("oopsie, no data"))
+        Err(anyhow::anyhow!("oopsie, no data"))
     }
 
     async fn get_all_job_status(&self) -> anyhow::Result<HashMap<ImportJobId, ImportJobStatus>> {

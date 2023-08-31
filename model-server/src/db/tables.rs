@@ -108,59 +108,60 @@ impl DB {
 
             let mut stmt =
                 tx.prepare("select id, name, model_type, runtime, description from model")?;
-            let rows = stmt.query_map([], |row| {
-                Ok(Model {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    model_type: row.get(2)?,
-                    runtime: row.get(3)?,
-                    description: row.get(4)?,
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(Model {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        model_type: row.get(2)?,
+                        runtime: row.get(3)?,
+                        description: row.get(4)?,
+                    })
                 })
-            })?;
+                .context("query model table")?;
 
             for row in rows {
-                let row = &row?;
+                let row = &row.context("row was malformed")?;
                 let mut stmt = tx.prepare(r"
                         select model_version.version, import_metadata.source, import_metadata.imported_at
                         from model, model_version, model_params, import_metadata
-                        where   model.id = model_version.id
+                        where   model.id = model_version.model_id
                             and model_version.model_id = model_params.model_id
                             and model_version.version = model_params.model_version
                             and model_version.model_id = import_metadata.model_id
                             and model_version.version = import_metadata.model_version
                             and model_version.model_id = :id
-                            order by model_version.version")?;
-                let versions = stmt.query_map(&[(":id", &row.id)], |row| {
-                    let (version, import_source, imported_at): (String, String, String) =
-                        (row.get(0)?, row.get(1)?, row.get(2)?);
-                    // Deserialize the import metadata from some shit here...etc.
-                    let import_source: api_types::ImportSource =
-                        serde_json::from_str(&import_source).unwrap();
-                    let imported_at: OffsetDateTime = serde_json::from_str(&imported_at).unwrap();
-                    Ok(api_types::ModelVersion {
-                        version: semver::Version::parse(&version).unwrap(),
-                        import_metadata: api_types::ImportMetadata {
-                            source: import_source,
-                            imported_at,
-                        },
-                    })
-                })?;
+                            order by model_version.version").context("prepare join")?;
 
                 let mut model_versions: Vec<api_types::ModelVersion> = Vec::new();
-                for version in versions {
-                    model_versions.push(version?)
+                let mut join_rows = stmt
+                    .query(&[(":id", &row.id)])
+                    .context("query join table")?;
+                while let Some(join_row) = join_rows.next().transpose() {
+                    let join_row = join_row.context("join row was malformed")?;
+                    let (version, import_source, imported_at): (String, String, OffsetDateTime) =
+                        (join_row.get(0)?, join_row.get(1)?, join_row.get(2)?);
+                    let source: api_types::ImportSource =
+                        serde_json::from_str(&import_source).context("parse import_source")?;
+                    model_versions.push(api_types::ModelVersion {
+                        version: semver::Version::parse(&version)?,
+                        import_metadata: api_types::ImportMetadata {
+                            imported_at,
+                            source,
+                        },
+                    })
                 }
 
                 let model = RegisteredModel {
-                    id: serde_json::from_str(&row.id)?,
+                    id: uuid::Uuid::parse_str(&row.id).context("failed to parse UUID")?,
                     name: row.name.to_string(),
                     model_type: match row.model_type.as_str() {
                         "completion" => api_types::ModelType::Completion,
-                        _ => return Err(anyhow::Error::msg("unknown model_type")),
+                        _ => return Err(anyhow::anyhow!("unknown model_type {}", &row.model_type)),
                     },
                     runtime: match row.runtime.as_str() {
                         "ggml" => api_types::Runtime::Ggml,
-                        _ => return Err(anyhow::Error::msg("unknown runtime")),
+                        _ => return Err(anyhow::anyhow!("unknown runtime {}", &row.runtime)),
                     },
                     versions: model_versions,
                 };

@@ -16,8 +16,6 @@ use model_server::{
 };
 use serde::Deserialize;
 
-
-
 #[derive(Deserialize, Debug)]
 struct EnvVars {
     #[serde(default = "default_listen_addr")]

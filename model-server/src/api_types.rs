@@ -116,10 +116,10 @@ pub enum Locator {
 #[serde(tag = "type")]
 pub enum ImportSource {
     #[serde(rename = "importv1/hf")]
-    HF(HFLocator),
+    HF { source: HFLocator },
 
     #[serde(rename = "importv1/disk")]
-    DISK(DiskLocator),
+    DISK { source: DiskLocator },
 }
 
 #[derive(Serialize)]
