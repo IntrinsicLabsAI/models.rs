@@ -69,7 +69,12 @@ pub mod types {
 pub mod endpoints {
     use super::types::{self, GetRegisteredModelsResponse};
     use crate::{db::tables, state::AppState};
-    use axum::{extract::State, http::StatusCode, Json};
+    use axum::{
+        body::HttpBody,
+        extract::{Path, RawBody, State},
+        http::StatusCode,
+        Json,
+    };
 
     pub async fn get_models(
         State(app_state): State<AppState>,
@@ -105,6 +110,52 @@ pub mod endpoints {
         let result = GetRegisteredModelsResponse { models: api_models };
 
         Ok(Json(result))
+    }
+
+    pub async fn get_model_description(
+        State(app_state): State<AppState>,
+        Path(model_name): Path<String>,
+    ) -> Result<Json<String>, StatusCode> {
+        let mut conn = app_state.db.conn.lock().await;
+        let tx = conn
+            .transaction()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let mut stmt = tx
+            .prepare("select description from model where name = ?")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let description = stmt
+            .query_row([&model_name], |row| {
+                let value: String = row.get(0)?;
+                Ok(value)
+            })
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+            .unwrap();
+
+        Ok(Json(description))
+    }
+
+    pub async fn update_model_description(
+        State(app_state): State<AppState>,
+        Path(model_name): Path<String>,
+        RawBody(mut updated_desc): RawBody,
+    ) -> StatusCode {
+        let data = updated_desc.data().await.unwrap().unwrap();
+        let desc = String::from_utf8(data.to_vec()).unwrap();
+
+        let mut conn = app_state.db.conn.lock().await;
+
+        let tx = conn.transaction().unwrap();
+        {
+            let mut stmt = tx
+                .prepare("update model set description = ? where name = ?")
+                .unwrap();
+            stmt.execute([&desc, &model_name]).unwrap();
+        }
+        tx.commit().unwrap();
+
+        StatusCode::NO_CONTENT
     }
 }
 

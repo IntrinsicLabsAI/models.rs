@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 
@@ -12,6 +12,14 @@ pub mod models;
 pub fn app_router() -> Router<AppState> {
     Router::new()
         .route("/models", get(models::endpoints::get_models))
+        .route(
+            "/models/:model_name/description",
+            get(models::endpoints::get_model_description),
+        )
+        .route(
+            "/models/:model_name/description",
+            put(models::endpoints::update_model_description),
+        )
         .route("/complete", post(generate::endpoints::generate))
         .route("/imports", post(imports::endpoints::import_model))
         .route("/imports", get(imports::endpoints::import_job_status_all))
