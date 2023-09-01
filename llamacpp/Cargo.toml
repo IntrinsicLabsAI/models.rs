@@ -8,3 +8,4 @@ edition.workspace = true
 [dependencies]
 anyhow = "1.0.75"
 llamacpp-sys = { path = "../llamacpp-sys" }
+tokio = { version = "1.32.0", features = ["sync"] }
